@@ -6,6 +6,8 @@ import bs4
 from bs4 import BeautifulSoup
 from loguru import logger
 
+from .error import UsageError
+
 
 class Article:
     """Representing a single article"""
@@ -17,11 +19,15 @@ class Article:
     content: str
 
     content_translation: list[str]
-    word_translation: list[tuple[str, str]]
+    word_explanation: list[tuple[str, str]]
 
     translation_id: int
     appreciation_id: int
     idjm_string: str  # some identifier used for verification
+
+    @property
+    def is_loaded(self):
+        return len(self.content_translation) > 0 and len(self.word_explanation) > 0
 
     @staticmethod
     def _get_translation_id(soup: BeautifulSoup) -> int:
@@ -52,9 +58,29 @@ class Article:
     def __init__(self, url):
         self.url = url
         self.content_translation = list()
-        self.word_translation = list()
+        self.word_explanation = list()
+        self.load()
+
+    def load(self):
+        """Load this article from internet"""
         self._load_basic()
         self._load_detail()
+
+        logger.info(
+            f""""parsing result:
+title: {self.title}
+author: {self.author}
+translation_id:{self.translation_id}
+appreciation_id:{self.appreciation_id}
+idjm_string:{self.idjm_string}
+content:\n{self.content}
+content_translation:\n{self.content_translation}
+world_translation:\n{self.word_explanation}"""
+        )
+
+    def get_world_explanations(self) -> list["WordExplanation"]:
+        """Generate a list of word explanations from this article"""
+        return WordExplanation.generate_from_article(self)
 
     def _load_basic(self):
         logger.info(f"fetching article {self.url}")
@@ -75,20 +101,6 @@ class Article:
         self.translation_id = self._get_translation_id(soup)
         self.appreciation_id = self._get_appreciation_id(soup)
         self.idjm_string = self._get_idjm_string(soup)
-        
-        self._load_detail()
-
-        logger.info(
-            f""""parsing result:
-title: {self.title}
-author: {self.author}
-translation_id:{self.translation_id}
-appreciation_id:{self.appreciation_id}
-idjm_string:{self.idjm_string}
-content:\n{self.content}
-content_translation:\n{self.content_translation}
-world_translation:\n{self.word_translation}"""
-        )
 
     def _load_detail(self):
         self._load_translation()
@@ -117,7 +129,7 @@ world_translation:\n{self.word_translation}"""
                 continue
             self.content_translation.append(text)
 
-        self.word_translation = _parse_world_translation(word_translation)
+        self.word_explanation = _parse_world_translation(word_translation)
 
 
 def _parse_world_translation(tag: bs4.Tag) -> list[tuple[str, str]]:
@@ -146,3 +158,41 @@ def _parse_world_translation(tag: bs4.Tag) -> list[tuple[str, str]]:
         lines.append(clean[:-1])
 
     return [tuple(text.split("：", maxsplit=1)) for text in lines]
+
+
+class WordExplanation:
+    """Word translation with context"""
+
+    sentence: str
+    word: str
+    explanation: str
+
+    @staticmethod
+    def generate_from_article(article: Article) -> list["WordExplanation"]:
+        """Generate a list of WordExplanation objects from a loaded article"""
+        if not article.is_loaded:
+            raise UsageError()
+
+        sentences = (
+            article.content.replace("，", "。")
+            .replace("？", "。")
+            .replace("！", "。")
+            .split("。")
+        )
+        current_sentence = 0
+        for word in article.word_explanation:
+            # Search in a single sentence
+            sentence_index = -1
+            for s in sentences[current_sentence:]:
+                match s.find():
+                    case -1:
+                        continue
+                    case i:
+                        print(i)
+
+        return list()
+
+    def __init__(self, sentence: str, word: str, explanation: str):
+        self.sentence = sentence
+        self.word = word
+        self.explanation = explanation
