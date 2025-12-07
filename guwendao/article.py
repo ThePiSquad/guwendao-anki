@@ -151,7 +151,6 @@ def _parse_world_translation(tag: bs4.Tag) -> list[tuple[str, str]]:
             if current:
                 text = "".join(str(x) for x in current).strip()
                 clean = BeautifulSoup(text, "lxml").get_text().replace("▲", "")
-                print(f"{clean:}")
                 if clean and clean != "注释":
                     if clean.startswith("注释"):
                         lines.append(clean.removeprefix("注释"))
