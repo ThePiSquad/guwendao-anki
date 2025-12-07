@@ -34,15 +34,23 @@ class Article:
         """Get the translation id for current article
         Guwendao uses this id to fetch detailed content
         """
-        return int(
-            soup.select_one('[id^="fanyiquan"]').get("id").replace("fanyiquan", "")
-        )
+        try:
+            return int(
+                soup.select_one('[id^="fanyiquan"]').get("id").replace("fanyiquan", "")
+            )
+        except AttributeError:
+            return -1
 
     @staticmethod
     def _get_appreciation_id(soup: BeautifulSoup) -> int:
-        return int(
-            soup.select_one('[id^="shangxiquan"]').get("id").replace("shangxiquan", "")
-        )
+        try:
+            return int(
+                soup.select_one('[id^="shangxiquan"]')
+                .get("id")
+                .replace("shangxiquan", "")
+            )
+        except AttributeError:
+            return -1
 
     @staticmethod
     def _get_idjm_string(soup: BeautifulSoup) -> str:
@@ -60,12 +68,6 @@ class Article:
         self.content_translation = list()
         self.word_explanation = list()
         self.load()
-
-    def load(self):
-        """Load this article from internet"""
-        self._load_basic()
-        self._load_detail()
-
         logger.info(
             f""""parsing result:
 title: {self.title}
@@ -82,7 +84,8 @@ world_translation:\n{self.word_explanation}"""
         """Generate a list of word explanations from this article"""
         return WordExplanation.generate_from_article(self)
 
-    def _load_basic(self):
+    def load(self):
+        """Load this article from internet"""
         logger.info(f"fetching article {self.url}")
         response = requests.get(self.url, timeout=1000)
         if response.status_code != 200:
@@ -102,8 +105,10 @@ world_translation:\n{self.word_explanation}"""
         self.appreciation_id = self._get_appreciation_id(soup)
         self.idjm_string = self._get_idjm_string(soup)
 
-    def _load_detail(self):
-        self._load_translation()
+        if self.translation_id == -1:
+            self._parse_translation(soup.select_one("div.contyishang"))
+        else:
+            self._load_translation()
 
     def _load_translation(self):
         # https://www.gushiwen.cn/nocdn/ajaxfanyi.aspx?id=57185&idjm=9551045DD9900B21
@@ -117,15 +122,17 @@ world_translation:\n{self.word_explanation}"""
         logger.info("parsing translation data")
         soup = BeautifulSoup(response.text, "lxml")
 
-        content_block = soup.select_one(".contyishang")
-        children = content_block.select("p")
+        self._parse_translation(soup.select_one(".contyishang"))
 
-        content_translation = children[0]
-        word_translation = children[1]
+    def _parse_translation(self, tag: bs4.Tag):
+        children = tag.select("p")
 
-        for element in content_translation.children:
+        content_translation = children[0:-1]
+        word_translation = children[-1]
+
+        for element in content_translation:
             text: str = element.text
-            if text.startswith("译文") or len(text) == 0:
+            if (len(text) == 2 and text.startswith("译文")) or len(text) == 0:
                 continue
             self.content_translation.append(text)
 
@@ -143,8 +150,9 @@ def _parse_world_translation(tag: bs4.Tag) -> list[tuple[str, str]]:
             # Finish current line when hitting <br>
             if current:
                 text = "".join(str(x) for x in current).strip()
-                clean = BeautifulSoup(text, "lxml").get_text()
-                if clean and clean != "注释" and not clean.endswith("▲"):
+                clean = BeautifulSoup(text, "lxml").get_text().replace("▲", "")
+                print(f"{clean:}")
+                if clean and clean != "注释":
                     if clean.startswith("注释"):
                         lines.append(clean.removeprefix("注释"))
                     else:
@@ -156,10 +164,10 @@ def _parse_world_translation(tag: bs4.Tag) -> list[tuple[str, str]]:
 
     # Critical: capture the last segment (after final <br> or at the very end)
     if current:
-        text = "".join(str(x) for x in current).strip()
+        text = "".join(str(x) for x in current).strip().replace("▲", "")
         clean = BeautifulSoup(text, "lxml").get_text()
-        lines.append(clean[:-1])
-
+        if clean:
+            lines.append(clean)
     return [tuple(text.split("：", maxsplit=1)) for text in lines]
 
 

@@ -35,6 +35,7 @@ class AnkiClient:
             },
             timeout=1000,
         )
+        print(response.text)
         print(response.json())
 
     def add_notes(self, notes: list[GuwendaoNote]):
