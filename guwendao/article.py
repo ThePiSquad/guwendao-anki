@@ -145,7 +145,10 @@ def _parse_world_translation(tag: bs4.Tag) -> list[tuple[str, str]]:
                 text = "".join(str(x) for x in current).strip()
                 clean = BeautifulSoup(text, "lxml").get_text()
                 if clean and clean != "注释" and not clean.endswith("▲"):
-                    lines.append(clean)
+                    if clean.startswith("注释"):
+                        lines.append(clean.removeprefix("注释"))
+                    else:
+                        lines.append(clean)
                 current = []
         else:
             # Accumulate everything else (text, <strong>, <a>, etc.)
@@ -163,36 +166,41 @@ def _parse_world_translation(tag: bs4.Tag) -> list[tuple[str, str]]:
 class WordExplanation:
     """Word translation with context"""
 
-    sentence: str
-    word: str
-    explanation: str
-
     @staticmethod
     def generate_from_article(article: Article) -> list["WordExplanation"]:
         """Generate a list of WordExplanation objects from a loaded article"""
         if not article.is_loaded:
             raise UsageError()
 
+        result: list[WordExplanation] = list()
         sentences = (
             article.content.replace("，", "。")
             .replace("？", "。")
             .replace("！", "。")
             .split("。")
         )
-        current_sentence = 0
         for word in article.word_explanation:
             # Search in a single sentence
-            sentence_index = -1
-            for s in sentences[current_sentence:]:
-                match s.find():
+            # Since the words may not be in order, we have to do a full scan
+            for i, s in enumerate(sentences):
+                match s.find(re.sub(r"（.+）", lambda m: "", word[0])):
                     case -1:
                         continue
-                    case i:
-                        print(i)
+                    case j:
+                        result.append(WordExplanation(s, j, word[0], word[1]))
+                        break
+        return result
 
-        return list()
+    sentence: str
+    word: str
+    explanation: str
+    start: int
 
-    def __init__(self, sentence: str, word: str, explanation: str):
+    def __init__(self, sentence: str, start: int, word: str, explanation: str):
         self.sentence = sentence
+        self.start = start
         self.word = word
         self.explanation = explanation
+
+    def __str__(self):
+        return f"{self.sentence},{self.start},{self.word},{self.explanation}"
